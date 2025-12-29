@@ -1,0 +1,2181 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+
+local MainWindow = Rayfield:CreateWindow({
+   Name = "TDG Hub",
+   Icon = 0, -- Icon in Topbar. Can use Lucide Icons (string) or Roblox Image (number). 0 to use no icon (default).
+   LoadingTitle = "Loading...",
+   LoadingSubtitle = "By TDG Development",
+   ShowText = "Rayfield", -- for mobile users to unhide rayfield, change if you'd like
+   Theme = "Default", -- Check https://docs.sirius.menu/rayfield/configuration/themes
+
+   ToggleUIKeybind = "K", -- The keybind to toggle the UI visibility (string like "K" or Enum.KeyCode)
+
+   DisableRayfieldPrompts = false,
+   DisableBuildWarnings = false, -- Prevents Rayfield from warning when the script has a version mismatch with the interface
+
+   ConfigurationSaving = {
+      Enabled = true,
+      FolderName = nil, -- Create a custom folder for your hub/game
+      FileName = "TDG Hub"
+   },
+
+   Discord = {
+      Enabled = false, -- Prompt the user to join your Discord server if their executor supports it
+      Invite = "noinvitelink", -- The Discord invite code, do not include discord.gg/. E.g. discord.gg/ ABCD would be ABCD
+      RememberJoins = true -- Set this to false to make them join the discord every time they load it up
+   },
+
+   KeySystem = false, -- Set this to true to use our key system
+   KeySettings = {
+      Title = "TDG Hub",
+      Subtitle = "Key System",
+      Note = "Key: TDG", -- Use this to tell the user how to get a key
+      FileName = "TdgKey", -- It is recommended to use something unique as other scripts using Rayfield may overwrite your key file
+      SaveKey = true, -- The user's key will be saved, but if you change the key, they will be unable to use your script
+      GrabKeyFromSite = false, -- If this is true, set Key below to the RAW site you would like Rayfield to get the key from
+      Key = {"TDG"} -- List of keys that will be accepted by the system, can be RAW file links (pastebin, github etc) or simple strings ("hello","key22")
+   }
+})
+
+
+local MainTab = MainWindow:CreateTab("Player", 4483362458) -- Title, Image
+
+
+local Section = MainTab:CreateSection("Toggles")
+
+-- Track player join order so we can ignore the first-joined player if requested
+local Players = game:GetService("Players")
+local joinOrder = {}
+do
+   -- initialize with current players in GetPlayers order
+   for _, p in ipairs(Players:GetPlayers()) do
+      table.insert(joinOrder, p)
+   end
+   Players.PlayerAdded:Connect(function(p)
+      table.insert(joinOrder, p)
+   end)
+   Players.PlayerRemoving:Connect(function(p)
+      for i, v in ipairs(joinOrder) do
+         if v == p then table.remove(joinOrder, i) break end
+      end
+   end)
+end
+
+
+-- Fly helper state and functions
+local flyEnabled = false
+local flySpeed = 50
+local flyBV, flyBG
+
+local function stopFly()
+   flyEnabled = false
+   if flyBV then
+      flyBV:Destroy()
+      flyBV = nil
+   end
+   if flyBG then
+      flyBG:Destroy()
+      flyBG = nil
+   end
+end
+
+         -- If we successfully fired server-side spawn attempts, try to find any spawned sign/model
+         -- nearby and detach it from the player, then animate it locally to orbit the player.
+         if didServer then
+            task.spawn(function()
+               task.wait(0.5)
+               local rootPos = hrp and hrp.Position
+               if not rootPos then return end
+               local candidates = {}
+               for _, v in ipairs(workspace:GetDescendants()) do
+                  if (v:IsA("Model") or v:IsA("BasePart")) then
+                     local name = v.Name and string.lower(v.Name) or ""
+                     if name:match("sign") or name:match("cardboard") or name:match("beggar") or name:match("donation") or name:match("podium") then
+                        local pos
+                        if v:IsA("Model") then
+                           local pp = v.PrimaryPart or v:FindFirstChildWhichIsA("BasePart")
+                           if pp then pos = pp.Position end
+                        else
+                           pos = v.Position
+                        end
+                        if pos and (pos - rootPos).Magnitude < 20 then
+                           table.insert(candidates, v)
+                        end
+                     end
+                  end
+               end
+
+               if #candidates == 0 then
+                  return
+               end
+
+               local RunService = game:GetService("RunService")
+               local spins = {}
+               for _, obj in ipairs(candidates) do
+                  -- if it's a part, wrap it in a model for uniform handling
+                  local model = obj
+                  if obj:IsA("BasePart") then
+                     -- create a temporary model wrapper
+                     model = Instance.new("Model")
+                     obj.Parent = model
+                     model.Name = obj.Name
+                     model.Parent = workspace
+                  end
+
+                  -- detach from any character by parenting to workspace
+                  pcall(function() model.Parent = workspace end)
+
+                  -- ensure we have a primary part
+                  local pp = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+                  if pp then
+                     -- try to weld/ungroup any Motor6D to detach
+                     for _, weld in ipairs(pp:GetDescendants()) do
+                        if weld:IsA("Motor6D") or weld:IsA("WeldConstraint") or weld:IsA("Weld") then
+                           pcall(function() weld:Destroy() end)
+                        end
+                     end
+                     pp.Anchored = true
+                     pp.CanCollide = false
+                     table.insert(spins, {model = model, part = pp, angle = 0, radius = 6})
+                  end
+               end
+
+               if #spins == 0 then return end
+
+               local conn
+               conn = RunService.RenderStepped:Connect(function(dt)
+                  if not hrp or not hrp.Parent then
+                     if conn then conn:Disconnect(); conn = nil end
+                     return
+                  end
+                  for i, entry in ipairs(spins) do
+                     entry.angle = entry.angle + dt * 2
+                     local pos = hrp.Position + Vector3.new(math.cos(entry.angle + i) * entry.radius, 2, math.sin(entry.angle + i) * entry.radius)
+                     pcall(function()
+                        entry.part.CFrame = CFrame.new(pos) * CFrame.Angles(0, entry.angle, 0)
+                     end)
+                  end
+               end)
+
+               task.spawn(function()
+                  task.wait(18)
+                  if conn then conn:Disconnect(); conn = nil end
+               end)
+            end)
+         end
+
+local function startFly()
+   if flyEnabled then return end
+   local player = game.Players.LocalPlayer
+   if not player then return end
+   local char = player.Character or player.CharacterAdded:Wait()
+   local hrp = char:FindFirstChild("HumanoidRootPart")
+   if not hrp then return end
+   flyEnabled = true
+
+   flyBV = Instance.new("BodyVelocity")
+   flyBV.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+   flyBV.P = 1250
+   flyBV.Velocity = Vector3.new(0, 0, 0)
+   flyBV.Parent = hrp
+
+   flyBG = Instance.new("BodyGyro")
+   flyBG.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+   flyBG.Parent = hrp
+
+   local uis = game:GetService("UserInputService")
+   local cam = workspace.CurrentCamera
+
+   spawn(function()
+      while flyEnabled and hrp.Parent do
+         local cf = cam.CFrame
+         local move = Vector3.new(0, 0, 0)
+         if uis:IsKeyDown(Enum.KeyCode.W) then move = move + cf.LookVector end
+         if uis:IsKeyDown(Enum.KeyCode.S) then move = move - cf.LookVector end
+         if uis:IsKeyDown(Enum.KeyCode.A) then move = move - cf.RightVector end
+         if uis:IsKeyDown(Enum.KeyCode.D) then move = move + cf.RightVector end
+         if uis:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+         if uis:IsKeyDown(Enum.KeyCode.E) then move = move + Vector3.new(0, 1, 0) end
+         if uis:IsKeyDown(Enum.KeyCode.Q) then move = move - Vector3.new(0, 1, 0) end
+         if move.Magnitude > 0 then
+            move = move.Unit * flySpeed
+         end
+         if flyBV then flyBV.Velocity = move end
+         if flyBG then flyBG.CFrame = cf end
+         wait()
+      end
+   end)
+end
+
+-- Stop fly on respawn
+if game.Players.LocalPlayer then
+   game.Players.LocalPlayer.CharacterAdded:Connect(function()
+      stopFly()
+   end)
+end
+
+local Toggle = MainTab:CreateToggle({
+   Name = "Fly",
+   CurrentValue = false,
+   Flag = "Toggle1",
+   Callback = function(enabled)
+      if enabled then
+         startFly()
+      else
+         stopFly()
+      end
+   end,
+})
+
+
+-- Infinite Jump toggle
+local infiniteJumpEnabled = false
+local infiniteJumpConn
+
+local function handleJumpRequest()
+   if not infiniteJumpEnabled then return end
+   local plr = game:GetService("Players").LocalPlayer
+   local humanoid = plr and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+   if humanoid then
+      humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+   end
+end
+
+if not infiniteJumpConn then
+   infiniteJumpConn = game:GetService("UserInputService").JumpRequest:Connect(handleJumpRequest)
+end
+
+local Toggle = MainTab:CreateToggle({
+   Name = "Infinite Jump",
+   CurrentValue = false,
+   Flag = "ToggleInfiniteJump",
+   Callback = function(enabled)
+      infiniteJumpEnabled = enabled
+   end,
+})
+
+
+local noclipConn
+local noclipCharConn
+
+local function setCharacterCollision(char, canCollide)
+   if not char then return end
+   for _, part in ipairs(char:GetDescendants()) do
+      if part:IsA("BasePart") then
+         part.CanCollide = canCollide
+      end
+   end
+end
+
+local function enableNoclip()
+   local player = game.Players.LocalPlayer
+   if not player then return end
+   local char = player.Character or player.CharacterAdded:Wait()
+   setCharacterCollision(char, false)
+
+   local RunService = game:GetService("RunService")
+   if noclipConn then noclipConn:Disconnect() end
+   noclipConn = RunService.Stepped:Connect(function()
+      local currentChar = player.Character
+      if currentChar then
+         setCharacterCollision(currentChar, false)
+      end
+   end)
+
+   if noclipCharConn then noclipCharConn:Disconnect() end
+   noclipCharConn = player.CharacterAdded:Connect(function(newChar)
+      setCharacterCollision(newChar, false)
+   end)
+end
+
+local function disableNoclip()
+   if noclipConn then noclipConn:Disconnect() noclipConn = nil end
+   if noclipCharConn then noclipCharConn:Disconnect() noclipCharConn = nil end
+   local player = game.Players.LocalPlayer
+   if player and player.Character then
+      setCharacterCollision(player.Character, true)
+   end
+end
+
+local Toggle = MainTab:CreateToggle({
+   Name = "Noclip",
+   CurrentValue = false,
+   Flag = "ToggleNoclip",
+   Callback = function(enabled)
+      if enabled then
+         enableNoclip()
+      else
+         disableNoclip()
+      end
+   end,
+})
+
+
+   MainTab:CreateToggle({
+      Name = "E + Click Teleport",
+      CurrentValue = false,
+      Flag = "ToggleEClickTeleport",
+      Callback = function(enabled)
+         local plr = game.Players.LocalPlayer
+         if not plr then return end
+         local UIS = game:GetService("UserInputService")
+         if eClickConn then
+            pcall(function() eClickConn:Disconnect() end)
+            eClickConn = nil
+         end
+         if enabled then
+            local mouse = plr:GetMouse()
+            conn = mouse.Button1Down:Connect(function()
+               if UIS:IsKeyDown(Enum.KeyCode.E) then
+                  local char = plr.Character or plr.CharacterAdded:Wait()
+                  local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                  if hrp and mouse and mouse.Hit then
+                     local pos = mouse.Hit.p
+                     pcall(function() hrp.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0)) end)
+                  end
+               end
+            end)
+            eClickConn = conn
+         else
+            if eClickConn then
+               pcall(function() eClickConn:Disconnect() end)
+               eClickConn = nil
+            end
+         end
+      end,
+   })
+
+
+local Section = MainTab:CreateSection("Sliders")
+
+
+ local Slider = MainTab:CreateSlider({
+    Name = "Walkspeed",
+    Range = {16, 250},
+    Increment = 10,
+    Suffix = "Walkspeed",
+    CurrentValue = 10,
+    Flag = "Slider1", -- A flag is the identifier for the configuration file, make sure every element has a different flag if you're using configuration saving to ensure no overlaps
+    Callback = function(v)
+        game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = v
+    end,
+ })
+
+
+  local Slider = MainTab:CreateSlider({
+    Name = "JumpPower",
+    Range = {50, 500},
+    Increment = 10,
+    Suffix = "JumpPower",
+    CurrentValue = 10,
+    Flag = "Slider1", -- A flag is the identifier for the configuration file, make sure every element has a different flag if you're using configuration saving to ensure no overlaps
+    Callback = function(v)
+        game.Players.LocalPlayer.Character.Humanoid.JumpPower = v
+    end,
+ })
+
+
+ local Tab2 = MainWindow:CreateTab("Games", 4483362458) -- Title, Image
+
+
+ local Section = Tab2:CreateSection("100 Player Circle")
+
+Tab2:CreateButton({
+   Name = "Teleport To End Of Obby (Firstmap)",
+   Callback = function()
+      local plr = game.Players.LocalPlayer
+      if not plr then return end
+      local char = plr.Character or plr.CharacterAdded:Wait()
+      local hrp = char and char:FindFirstChild("HumanoidRootPart")
+      if not hrp then return end
+
+      local target = nil
+      pcall(function()
+         if workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Obby") and workspace.Map.Obby:FindFirstChild("End") and workspace.Map.Obby.End:FindFirstChild("Stuff") then
+            local kids = workspace.Map.Obby.End.Stuff:GetChildren()
+            local entry = kids[3]
+            if entry then
+               target = entry:FindFirstChild("Frame") or entry
+            end
+         end
+      end)
+
+      if target and target:IsA("BasePart") then
+         hrp.CFrame = target.CFrame * CFrame.new(5, -2, 0)
+      end
+   end,
+})
+
+
+ local Section = Tab2:CreateSection("Red Light Green Light")
+
+
+ Tab2:CreateButton({
+   Name = "Teleport To End Of Red Light Green Light",
+   Callback = function()
+      local player = game.Players.LocalPlayer
+      if not player then return end
+      local char = player.Character or player.CharacterAdded:Wait()
+      local hrp = char and char:FindFirstChild("HumanoidRootPart")
+      local target = nil
+      local mapFolder = workspace:FindFirstChild("Red Light, Green Light")
+      if mapFolder and mapFolder:FindFirstChild("Decoration") then
+         target = mapFolder.Decoration:FindFirstChild("DeadTree")
+      elseif workspace:FindFirstChild("Decoration") then
+         target = workspace.Decoration:FindFirstChild("DeadTree")
+      end
+      if hrp and target and target:IsA("BasePart") then
+         local frontOffset = 5 -- studs in front of the tree
+         local verticalOffset = 3 - 5 -- 5 studs below previous +Y offset (previously +3)
+         hrp.CFrame = target.CFrame * CFrame.new(0, verticalOffset, frontOffset)
+      end
+   end,
+})
+
+
+local Section = Tab2:CreateSection("Glass Bridge")
+
+Tab2:CreateButton({
+   Name = "Teleport To End Of Glass Bridge",
+   Callback = function()
+      local player = game.Players.LocalPlayer
+      if not player then return end
+      local char = player.Character or player.CharacterAdded:Wait()
+      local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+      local part = nil
+      local map = workspace:FindFirstChild("Glass Bridge")
+      if map and map:FindFirstChild("Structure") and map.Structure:FindFirstChild("Exit") then
+         local doorsFolder = map.Structure.Exit:FindFirstChild("ElevatorDoors")
+         if doorsFolder then
+            local entry = doorsFolder:GetChildren()[2]
+            if entry then
+               local door = entry:FindFirstChild("Door")
+               if door and door:IsA("BasePart") then
+                  part = door
+               elseif entry:IsA("BasePart") then
+                  part = entry
+               end
+            end
+         end
+      end
+
+      if hrp and part then
+         local backDistance = 5
+         local leftOffset = -3
+         hrp.CFrame = part.CFrame * CFrame.new(leftOffset, 3, -backDistance)
+      end
+   end,
+})
+
+
+ Tab2:CreateButton({
+      Name = "Reveal All Glass Panels",
+      Callback = function()
+         local plr = game.Players.LocalPlayer
+         if not plr then return end
+         local char = plr.Character or plr.CharacterAdded:Wait()
+         local hrp = char and char:FindFirstChild("HumanoidRootPart")
+         if not hrp then return end
+
+         local originalCFrame = hrp.CFrame
+         local bridge = workspace:FindFirstChild("Glass Bridge")
+         if not bridge then return end
+         local panels = bridge:FindFirstChild("Bridge") and bridge.Bridge:FindFirstChild("GlassPanels")
+         if not panels then return end
+
+         -- Collect each panel's BasePart (handle Model or BasePart) in order, then teleport sequentially
+         local panelsToVisit = {}
+         for i = 1, 15 do
+            local choiceName = "Choice" .. tostring(i)
+            local choice = panels:FindFirstChild(choiceName)
+            if choice then
+               for _, gname in ipairs({"Glass0","Glass1"}) do
+                  local glass = choice:FindFirstChild(gname)
+                  if glass then
+                     local glassPart = nil
+                     if glass:IsA("BasePart") then
+                        glassPart = glass
+                     elseif glass:IsA("Model") then
+                        glassPart = glass.PrimaryPart or glass:FindFirstChildWhichIsA("BasePart")
+                     end
+                     if glassPart then
+                        table.insert(panelsToVisit, glassPart)
+                     end
+                  end
+               end
+            end
+         end
+
+         local humanoid = char:FindFirstChildOfClass("Humanoid")
+
+         -- speed up movement while visiting panels
+         pcall(function()
+            if humanoid then
+               humanoid.WalkSpeed = 30
+               humanoid.JumpPower = 80
+            end
+         end)
+
+         for _, part in ipairs(panelsToVisit) do
+            pcall(function()
+               hrp.CFrame = part.CFrame * CFrame.new(0, 3, 0)
+            end)
+            task.wait(0.04)
+         end
+
+         -- restore original position
+         pcall(function()
+            if hrp and originalCFrame then hrp.CFrame = originalCFrame end
+         end)
+
+         -- wait 2 seconds, then reset WalkSpeed and JumpPower to requested values (20 speed, 50 jump)
+         task.wait(1.5)
+         pcall(function()
+            if humanoid then
+               humanoid.WalkSpeed = 20
+               humanoid.JumpPower = 50
+            end
+         end)
+      end,
+   })
+
+
+local Section = Tab2:CreateSection("Hide And Seek")
+
+Tab2:CreateButton({
+   Name = "Teleport To Exit In Hide And Seek",
+   Callback = function()
+      local player = game.Players.LocalPlayer
+      if not player then return end
+      local char = player.Character or player.CharacterAdded:Wait()
+      local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+      local part = nil
+      local map = workspace:FindFirstChild("Hide and Seek")
+      if map and map:FindFirstChild("GeneratedMap") and map.GeneratedMap:FindFirstChild("Exit") and map.GeneratedMap.Exit:FindFirstChild("Structure") then
+         local target = map.GeneratedMap.Exit.Structure:FindFirstChild("Floor")
+         if target then
+            if target:IsA("BasePart") then
+               part = target
+            elseif target:IsA("Model") then
+               part = target.PrimaryPart or target:FindFirstChildWhichIsA("BasePart")
+            end
+         end
+      end
+
+      if hrp and part then
+         local rightOffset = 23
+         hrp.CFrame = part.CFrame * CFrame.new(rightOffset, 3, 0)
+      end
+   end,
+})
+
+
+   Tab2:CreateButton({
+      Name = "Teleport to Random",
+      Callback = function()
+         local plr = game.Players.LocalPlayer
+         if not plr then return end
+
+         -- ensure the Hide and Seek spawn exists
+         local hideMap = workspace:FindFirstChild("Hide and Seek")
+         local spawnObj = hideMap and hideMap:FindFirstChild("Spawns") and hideMap.Spawns:FindFirstChild("SpawnLocation")
+         if not spawnObj then return end
+
+         -- gather candidate players
+         local candidates = {}
+         for _, p in ipairs(game.Players:GetPlayers()) do
+            if p ~= plr and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+               table.insert(candidates, p)
+            end
+         end
+         if #candidates == 0 then return end
+
+         local target = candidates[math.random(1, #candidates)]
+         local tr = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+         local char = plr.Character or plr.CharacterAdded:Wait()
+         local hrp = char and char:FindFirstChild("HumanoidRootPart")
+         if hrp and tr then
+            pcall(function() hrp.CFrame = tr.CFrame * CFrame.new(0, 3, 0) end)
+         end
+      end,
+   })
+
+
+local Section = Tab2:CreateSection("Jump Rope")
+
+-- Jump Rope teleport: behind the doll's right leg
+Tab2:CreateButton({
+   Name = "Teleport To End In Jump Rope",
+   Callback = function()
+      local player = game.Players.LocalPlayer
+      if not player then return end
+      local char = player.Character or player.CharacterAdded:Wait()
+      local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+      local part = nil
+      local map = workspace:FindFirstChild("Jump Rope")
+      if map and map:FindFirstChild("ProgrammerArt") then
+         local doll = map.ProgrammerArt:FindFirstChild("squid game doll boy")
+         if doll then
+            local leg = doll:FindFirstChild("rightleg")
+            if leg and leg:IsA("BasePart") then
+               part = leg
+            elseif leg and leg:IsA("Model") then
+               part = leg.PrimaryPart or leg:FindFirstChildWhichIsA("BasePart")
+            end
+         end
+      end
+
+      if hrp and part then
+         -- 4 studs in front (local Z), 2 studs to the left (local X), keep small Y offset
+         hrp.CFrame = part.CFrame * CFrame.new(0, 3, 4)
+      end
+   end,
+})
+
+
+   -- Anti Knockback: persistent handlers so disable reliably stops behavior
+   do
+      local antiEnabled = false
+      local hbConn = nil
+      local charConn = nil
+      local savedWalk, savedJump = nil, nil
+
+      local function safeUnfreeze(char)
+         if not char then return end
+         local hrp = char:FindFirstChild("HumanoidRootPart")
+         local humanoid = char:FindFirstChildOfClass("Humanoid")
+         pcall(function()
+            if humanoid then
+               humanoid.PlatformStand = false
+               if savedWalk then humanoid.WalkSpeed = savedWalk end
+               if savedJump then humanoid.JumpPower = savedJump end
+            end
+            if hrp then hrp.Anchored = false end
+         end)
+      end
+
+      local function handleCharacter(char)
+         if not char then return end
+         local hrp = char:FindFirstChild("HumanoidRootPart")
+         local humanoid = char:FindFirstChildOfClass("Humanoid")
+         if humanoid then
+            savedWalk = savedWalk or humanoid.WalkSpeed
+            savedJump = savedJump or humanoid.JumpPower
+         end
+
+         -- ensure any previous connection is cleaned
+         if hbConn then pcall(function() hbConn:Disconnect() end) hbConn = nil end
+         local RunService = game:GetService("RunService")
+         hbConn = RunService.Heartbeat:Connect(function()
+            if not antiEnabled then return end
+            if not char or not char.Parent then return end
+
+            -- Only run anti-rope logic when the Jump Rope doll's rightleg exists
+            local legPresent = false
+            pcall(function()
+               local jr = workspace:FindFirstChild("Jump Rope")
+               if jr and jr:FindFirstChild("ProgrammerArt") then
+                  local doll = jr.ProgrammerArt:FindFirstChild("squid game doll")
+                  if doll and doll:FindFirstChild("rightleg") then
+                     legPresent = true
+                  end
+               end
+            end)
+            if not legPresent then
+               -- not in Jump Rope map / leg missing -> do nothing
+               return
+            end
+
+            local h = char:FindFirstChildOfClass("Humanoid")
+            local r = char:FindFirstChild("HumanoidRootPart")
+
+            -- detect ragdoll or large fling
+            local isRagdoll = false
+            if h then
+               local st = h:GetState()
+               if st == Enum.HumanoidStateType.Physics or h.PlatformStand then isRagdoll = true end
+            end
+
+            local isFling = false
+            if r then
+               local ok, vel = pcall(function() return r.AssemblyLinearVelocity end)
+               if ok and vel and vel.Magnitude > 80 then isFling = true end
+            end
+
+            if isRagdoll or isFling then
+               -- freeze for 1s
+               pcall(function()
+                  if h then
+                     h.PlatformStand = true
+                     if savedWalk then h.WalkSpeed = 0 end
+                     if savedJump then h.JumpPower = 0 end
+                  end
+                  if r then
+                     r.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                     r.AssemblyAngularVelocity = Vector3.new(0,0,0)
+                     r.Anchored = true
+                  end
+               end)
+               task.wait(1)
+               safeUnfreeze(char)
+            else
+               -- restore movement values if available
+               if h and savedWalk then
+                  pcall(function()
+                     h.WalkSpeed = savedWalk
+                     h.JumpPower = savedJump or h.JumpPower
+                     h.PlatformStand = false
+                  end)
+               end
+            end
+         end)
+      end
+
+      Tab2:CreateToggle({
+         Name = "Anti Rope",
+         CurrentValue = false,
+         Flag = "ToggleAntiKnockback3",
+         Callback = function(enabled)
+            local plr = game.Players.LocalPlayer
+            if not plr then return end
+
+            antiEnabled = enabled
+
+            if enabled then
+               if plr.Character then handleCharacter(plr.Character) end
+               if charConn then charConn:Disconnect(); charConn = nil end
+               charConn = plr.CharacterAdded:Connect(function(c)
+                  task.wait(0.1)
+                  handleCharacter(c)
+               end)
+            else
+               -- disable: clear flag, disconnect and unfreeze
+               antiEnabled = false
+               if hbConn then pcall(function() hbConn:Disconnect() end) hbConn = nil end
+               if charConn then pcall(function() charConn:Disconnect() end) charConn = nil end
+               if plr.Character then
+                  pcall(function()
+                     safeUnfreeze(plr.Character)
+                     local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                     local humanoid = plr.Character:FindFirstChildOfClass("Humanoid")
+                     if hrp then
+                        hrp.Anchored = false
+                        hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                        hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+                     end
+                     if humanoid then
+                        humanoid.PlatformStand = false
+                        humanoid.WalkSpeed = savedWalk or 16
+                        humanoid.JumpPower = savedJump or 50
+                     end
+                  end)
+               end
+               savedWalk, savedJump = nil, nil
+            end
+         end,
+      })
+   end
+
+
+local Section = Tab2:CreateSection("Mingle")
+
+   -- Interact all Mingle doors (robust: fixed holds + retries, no instant taps)
+   Tab2:CreateButton({
+      Name = "Open/Close Random Doors In Mingle",
+      Callback = function()
+         local roomsFolder = workspace:FindFirstChild("Mingle") and workspace.Mingle:FindFirstChild("Rooms")
+         if not roomsFolder then return end
+         local colors = {"Red","Orange","Yellow","Green","Blue","Purple"}
+         local plr = game.Players.LocalPlayer
+         if not plr then return end
+
+         local function safeCharacter()
+            return plr.Character or plr.CharacterAdded:Wait()
+         end
+
+         local char = safeCharacter()
+         local hrp = char and char:FindFirstChild("HumanoidRootPart")
+         if not hrp then return end
+         local originalCFrame = hrp.CFrame
+
+         -- Settings: spam-interact each door (small delay between spams)
+         local spamCount = 3
+         local spamDelay = 0.01
+         local afterDoorDelay = 0.1
+
+         for i = 1, 60 do
+            local color = colors[((i - 1) % #colors) + 1]
+            local roomName = string.format("%02d_%s", i, color)
+            local room = roomsFolder:FindFirstChild(roomName)
+            if room and room:FindFirstChild("Door") then
+               local promptPart = room.Door:FindFirstChild("PromptPart")
+               if promptPart then
+                  pcall(function()
+                     char = safeCharacter()
+                     hrp = char and char:FindFirstChild("HumanoidRootPart")
+                     if hrp then
+                        -- Move to a reliable position in front of the prompt and face it
+                        local targetCF = promptPart.CFrame
+                        local forward = targetCF.LookVector
+                        local pos = targetCF.p - forward * 0.6 + Vector3.new(0, 1.5, 0)
+                        hrp.CFrame = CFrame.new(pos, targetCF.p)
+                        wait(0.04)
+
+                        local prompt = promptPart:FindFirstChildWhichIsA("ProximityPrompt", true)
+                        if prompt then
+                           for s = 1, spamCount do
+                              pcall(function() prompt:InputHoldBegin() end)
+                              pcall(function() prompt:InputHoldEnd() end)
+                              task.wait(spamDelay)
+                           end
+                           task.wait()
+                        else
+                           local click = promptPart:FindFirstChildWhichIsA("ClickDetector", true)
+                           if click then
+                              for s = 1, spamCount do
+                                 pcall(function() click:FireClick(plr) end)
+                                 task.wait(spamDelay)
+                              end
+                              task.wait()
+                           end
+                        end
+                     end
+                  end)
+
+                  wait(afterDoorDelay)
+               end
+            end
+         end
+         -- restore original position once after all doors
+         pcall(function()
+            local finalChar = plr.Character
+            local finalHrp = finalChar and finalChar:FindFirstChild("HumanoidRootPart")
+            if finalHrp and originalCFrame then
+               finalHrp.CFrame = originalCFrame
+            end
+         end)
+      end,
+   })
+
+
+   local Section = Tab2:CreateSection("Pick A Side")
+
+
+   Tab2:CreateButton({
+      Name = "Teleport to opposite side",
+      Callback = function()
+         local plr = game.Players.LocalPlayer
+         if not plr then return end
+         local char = plr.Character or plr.CharacterAdded:Wait()
+         local hrp = char and char:FindFirstChild("HumanoidRootPart")
+         if not hrp then return end
+
+         local ok, pas = pcall(function()
+            local map = workspace:FindFirstChild("Map")
+            return map and map:FindFirstChild("Pick A Side") and map["Pick A Side"]
+         end)
+         if not ok or not pas then
+            warn("Teleport to correct side: Pick A Side map not found")
+            return
+         end
+
+         local function findBase(sideName)
+            local s = pas:FindFirstChild(sideName)
+            return s and s:FindFirstChild("Base")
+         end
+
+         local blueBase = findBase("Blue")
+         local redBase = findBase("Red")
+         if not blueBase and not redBase then
+            warn("Teleport to correct side: no Blue or Red base found")
+            return
+         end
+
+         -- count players nearest to each base
+         local blueCount, redCount = 0, 0
+         for _, p in ipairs(game.Players:GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+               local pos = p.Character.HumanoidRootPart.Position
+               local bdist = blueBase and (pos - blueBase.Position).Magnitude or math.huge
+               local rdist = redBase and (pos - redBase.Position).Magnitude or math.huge
+               if bdist < rdist then
+                  blueCount = blueCount + 1
+               else
+                  redCount = redCount + 1
+               end
+            end
+         end
+
+         -- choose side with fewer players
+         local targetBase = nil
+         if blueBase and redBase then
+            if blueCount <= redCount then targetBase = blueBase else targetBase = redBase end
+         else
+            targetBase = blueBase or redBase
+         end
+
+         if targetBase then
+            pcall(function() hrp.CFrame = targetBase.CFrame + Vector3.new(0, 3, 0) end)
+         end
+      end,
+   })
+
+
+
+local Tab3 = MainWindow:CreateTab("Damage", 4483362458) -- Title, Image
+
+
+local Section = Tab3:CreateSection("OP")
+
+
+      Tab3:CreateToggle({
+      Name = "Remove Sword Cooldown",
+      CurrentValue = false,
+      Flag = "ToggleSwordCooldown",
+            Callback = function(enabled)
+               -- start/stop handled by shared helpers defined below
+               if enabled then
+                  if swordCooldown and swordCooldown.start then pcall(swordCooldown.start) end
+               else
+                  if swordCooldown and swordCooldown.stop then pcall(swordCooldown.stop) end
+               end
+            end,
+   })
+
+         -- Shared sword cooldown helper (accessible to multiple toggles)
+         do
+            local Players = game:GetService("Players")
+            local RunService = game:GetService("RunService")
+            local UserInputService = game:GetService("UserInputService")
+
+            swordCooldown = swordCooldown or {}
+            swordCooldown.state = swordCooldown.state or {}
+            _G._tdg_sword_cooldown = swordCooldown.state
+
+            local function findSwordModel()
+               local plr = Players.LocalPlayer
+               if not plr then return nil end
+               local char = plr.Character
+               local function nameLooksLikeWeapon(n)
+                  if not n then return false end
+                  n = tostring(n):lower()
+                  return n:find("sword") or n:find("squid") or n:find("knife") or n:find("squidknife") or n:find("knife")
+               end
+
+               if char then
+                  -- prefer explicit named instances first
+                  local s = char:FindFirstChild("Sword", true) or char:FindFirstChild("SquidKnife", true)
+                  if s then return s end
+                  -- try currently equipped tool if its name looks like a weapon
+                  local t = char:FindFirstChildWhichIsA("Tool", true)
+                  if t and nameLooksLikeWeapon(t.Name) then return t end
+               end
+
+               -- check workspace copy of the player's character for named weapon objects
+               local wsChar = workspace:FindFirstChild(plr.Name)
+               if wsChar then
+                  local s = wsChar:FindFirstChild("Sword", true) or wsChar:FindFirstChild("SquidKnife", true)
+                  if s then return s end
+               end
+
+               -- fallback: try any top-level named weapon
+               local anySword = workspace:FindFirstChild("Sword")
+               if anySword then return anySword end
+               local anySquid = workspace:FindFirstChild("SquidKnife")
+               if anySquid then return anySquid end
+               -- last resort: find any tool in character that looks like a weapon
+               if plr.Character then
+                  for _,v in ipairs(plr.Character:GetChildren()) do
+                     if v:IsA("Tool") and nameLooksLikeWeapon(v.Name) then return v end
+                  end
+               end
+               return nil
+            end
+
+            local function stopSwingAnimationsOnce()
+               local plr = Players.LocalPlayer
+               if not plr or not plr.Character then return end
+               local humanoid = plr.Character:FindFirstChildOfClass("Humanoid")
+               if not humanoid then return end
+               local animator = humanoid:FindFirstChildOfClass("Animator")
+               if not animator then return end
+               for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                  pcall(function()
+                     local ok, aname = pcall(function() return (track.Animation and track.Animation.Name) or track.Name end)
+                     if ok and aname then
+                        local lname = string.lower(aname)
+                        if lname:find("swing") or lname:find("slash") or lname:find("attack") or lname:find("stab") or lname:find("hit") or lname:find("knife") then
+                           track:Stop()
+                        end
+                     end
+                  end)
+               end
+            end
+
+            function swordCooldown.start()
+               local state = swordCooldown.state
+               if state.heartbeat then pcall(function() state.heartbeat:Disconnect() end) end
+               state.heartbeat = RunService.Heartbeat:Connect(function()
+                  pcall(stopSwingAnimationsOnce)
+               end)
+
+               if state.inputConn then pcall(function() state.inputConn:Disconnect() end) end
+               state.inputConn = UserInputService.InputBegan:Connect(function(inp, gpe)
+                  if gpe then return end
+                  if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+                     pcall(stopSwingAnimationsOnce)
+                     local sword = findSwordModel()
+                     if sword then
+                        for _, v in ipairs(sword:GetDescendants()) do
+                           pcall(function()
+                              if v:IsA("RemoteEvent") then
+                                 local n = string.lower(v.Name)
+                                 if n:find("swing") or n:find("server") or n:find("fire") then
+                                    v:FireServer()
+                                 end
+                              elseif v:IsA("RemoteFunction") then
+                                 local n = string.lower(v.Name)
+                                 if n:find("swing") or n:find("server") or n:find("invoke") then
+                                    pcall(function() v:InvokeServer() end)
+                                 end
+                              end
+                           end)
+                        end
+                     end
+                  end
+               end)
+            end
+
+            function swordCooldown.stop()
+               local state = swordCooldown.state
+               if state.heartbeat then pcall(function() state.heartbeat:Disconnect() end) state.heartbeat = nil end
+               if state.inputConn then pcall(function() state.inputConn:Disconnect() end) state.inputConn = nil end
+            end
+         end
+
+
+   local Section = Tab3:CreateSection("Kill All (OP)")
+
+-- Toggle: teleport player far outside map and freeze until toggled off
+do
+   local freezeEnabled = false
+   local savedCFrame = nil
+   local outsideCFrame = CFrame.new(10000, 10000, 10000)
+
+   local function applyFreezeToCharacter(char)
+      if not char then return end
+      local hrp = char:FindFirstChild("HumanoidRootPart")
+      local humanoid = char:FindFirstChildOfClass("Humanoid")
+      if hrp then
+         if not savedCFrame then
+            savedCFrame = hrp.CFrame
+         end
+         -- Ensure we are not frozen, teleport, wait for position to settle, then pause briefly and freeze
+         if humanoid then
+            pcall(function() humanoid.PlatformStand = false end)
+         end
+         hrp.Anchored = false
+         pcall(function() hrp.CFrame = outsideCFrame end)
+
+         -- wait until character position matches target or timeout
+         local start = tick()
+         while tick() - start < 0.5 do
+            if not hrp or not hrp.Parent then break end
+            local ok, pos = pcall(function() return hrp.Position end)
+            if ok and pos and (pos - outsideCFrame.p).Magnitude < 1 then
+               break
+            end
+            task.wait(0.03)
+         end
+
+         -- wait an additional 0.5s before freezing so other clients see you at the safezone
+         task.wait(0.5)
+
+         -- now apply freeze
+         if humanoid then
+            pcall(function() humanoid.PlatformStand = true end)
+         end
+         hrp.Anchored = true
+      end
+      if humanoid then
+         -- (already set above when hrp exists)
+      end
+   end
+
+   local function removeFreezeFromCharacter(char)
+      if not char then return end
+      local hrp = char:FindFirstChild("HumanoidRootPart")
+      local humanoid = char:FindFirstChildOfClass("Humanoid")
+      -- unfreeze before teleporting back so server/client agree on movement
+      if humanoid then
+         pcall(function() humanoid.PlatformStand = false end)
+      end
+      if hrp then
+         hrp.Anchored = false
+      end
+      if hrp and savedCFrame then
+         -- give physics a moment, then move back and wait for settle
+         task.wait(0.05)
+         pcall(function() hrp.CFrame = savedCFrame end)
+         local start = tick()
+         while tick() - start < 0.5 do
+            if not hrp or not hrp.Parent then break end
+            local ok, pos = pcall(function() return hrp.Position end)
+            if ok and pos and (pos - savedCFrame.p).Magnitude < 1 then
+               break
+            end
+            task.wait(0.03)
+         end
+         savedCFrame = nil
+      end
+   end
+
+   game.Players.LocalPlayer.CharacterAdded:Connect(function(char)
+      if freezeEnabled then
+         applyFreezeToCharacter(char)
+      end
+   end)
+
+   -- connection handle for E+Click teleport
+   local eClickConn = nil
+
+
+   Tab3:CreateToggle({
+      Name = "Kill All (Equip Weapon And Spam)",
+      CurrentValue = false,
+      Flag = "ToggleMassKill",
+      Callback = function(enabled)
+         local plr = game.Players.LocalPlayer
+         if not plr then return end
+
+         massKillEnabled = enabled
+
+            -- enable sword cooldown removal while mass-killing
+            pcall(function() if swordCooldown and swordCooldown.start then swordCooldown.start() end end)
+
+         if enabled then
+            -- save current position
+            local char = plr.Character or plr.CharacterAdded:Wait()
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then massKillSavedCFrame = hrp.CFrame end
+
+            -- select player to ignore: prefer typed username, otherwise earliest-joined non-local
+            massKillIgnore = nil
+            if massKillIgnoreName and massKillIgnoreName ~= "" then
+               massKillIgnore = game.Players:FindFirstChild(massKillIgnoreName)
+            end
+            if not massKillIgnore then
+               for _, p in ipairs(joinOrder) do
+                  if p ~= plr then
+                     massKillIgnore = p
+                     break
+                  end
+               end
+            end
+
+            -- main loop in a protected task
+            task.spawn(function()
+               local ok, err = pcall(function()
+                     while massKillEnabled do
+                        local players = game.Players:GetPlayers()
+                        for _, target in ipairs(players) do
+                           if not massKillEnabled then break end
+                           if target == plr or target == massKillIgnore then continue end
+
+                           local tchar = target.Character
+                           local th = tchar and tchar:FindFirstChildOfClass("Humanoid")
+                           local tr = tchar and tchar:FindFirstChild("HumanoidRootPart")
+                           if not (th and tr and th.Health > 0) then
+                              continue
+                           end
+
+                           -- ensure we have a tool: try to equip from backpack if not currently equipped
+                           local myChar = plr.Character
+                           local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+                           local myTool = myChar and myChar:FindFirstChildOfClass("Tool")
+                           if not myTool and myHum then
+                              local backpack = plr:FindFirstChild("Backpack")
+                              if backpack then
+                                 local btool = backpack:FindFirstChildWhichIsA("Tool")
+                                 if btool then
+                                    pcall(function() myHum:EquipTool(btool) end)
+                                    myTool = myChar and myChar:FindFirstChildOfClass("Tool")
+                                 end
+                              end
+                           end
+
+                           -- teleport near the target and face them
+                           pcall(function()
+                              local myHrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                              if myHrp then
+                                 myHrp.CFrame = tr.CFrame * CFrame.new(0, 0, 2)
+                                 task.wait(0.03)
+                              end
+                           end)
+
+                           -- attack this target repeatedly until they die (or toggle disabled)
+                           while massKillEnabled do
+                              th = target.Character and target.Character:FindFirstChildOfClass("Humanoid")
+                              tr = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+                              if not th or th.Health <= 0 then break end
+
+                              -- preferred: simulate left-click if possible
+                              local clicked = false
+                              local vim = nil
+                              pcall(function() vim = game:GetService("VirtualInputManager") end)
+                              if vim and vim.SendMouseButtonEvent then
+                                 local cam = workspace.CurrentCamera
+                                 local vx = (cam and cam.ViewportSize and cam.ViewportSize.X * 0.5) or 400
+                                 local vy = (cam and cam.ViewportSize and cam.ViewportSize.Y * 0.5) or 300
+                                 pcall(function() vim:SendMouseButtonEvent(vx, vy, true, game) end)
+                                 task.wait(0.01)
+                                 pcall(function() vim:SendMouseButtonEvent(vx, vy, false, game) end)
+                                 clicked = true
+                              elseif typeof(mouse1click) == "function" then
+                                 pcall(mouse1click)
+                                 clicked = true
+                              end
+
+                              -- fallback: Activate tool + fire remotes
+                              if not clicked then
+                                 local activeTool = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
+                                 if activeTool then
+                                    pcall(function() activeTool:Activate() end)
+                                    for _, d in ipairs(activeTool:GetDescendants()) do
+                                       if d:IsA("RemoteEvent") then
+                                          pcall(function() d:FireServer(target) end)
+                                          pcall(function() d:FireServer() end)
+                                       elseif d:IsA("RemoteFunction") then
+                                          pcall(function() d:InvokeServer(target) end)
+                                          pcall(function() d:InvokeServer() end)
+                                       end
+                                    end
+                                 end
+                              end
+
+                              -- keep close to target to ensure touch/hit registration
+                              pcall(function()
+                                 local myHrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                                 if myHrp and tr then
+                                    myHrp.CFrame = tr.CFrame * CFrame.new(0, 0, 1)
+                                 end
+                              end)
+
+                              task.wait(0.03)
+                           end
+
+                           -- small pause after target dies before moving to next
+                           task.wait(0.08)
+                        end
+                        task.wait(0.12)
+                     end
+               end)
+               if not ok then
+                  warn("MassKill loop error:", err)
+               end
+            end)
+         else
+            massKillEnabled = false
+            -- restore position
+            pcall(function()
+               local char = plr.Character
+               local hrp = char and char:FindFirstChild("HumanoidRootPart")
+               if hrp and massKillSavedCFrame then
+                  hrp.CFrame = massKillSavedCFrame
+               end
+            end)
+            -- stop sword cooldown helper when disabling
+            pcall(function() if swordCooldown and swordCooldown.stop then swordCooldown.stop() end end)
+         end
+      end,
+   })
+
+
+      -- Mass-kill toggle: teleport to players and spam equipped tool until they're dead
+   local massKillEnabled = false
+   local massKillSavedCFrame = nil
+   local massKillIgnore = nil -- player to ignore (first player in server)
+   local massKillIgnoreName = "" -- optional: username to ignore
+   local massKillIgnoreIndex = 0 -- index for cycling ignore selection
+
+   local function notifyMassKill(msg)
+      pcall(function()
+         if Rayfield and Rayfield.Notify then
+            Rayfield:Notify({Title = "MassKill", Content = msg, Duration = 3})
+         end
+      end)
+      pcall(function()
+         local StarterGui = game:GetService("StarterGui")
+         StarterGui:SetCore("SendNotification", {Title = "MassKill", Text = msg, Duration = 3})
+      end)
+      print("[MassKill]", msg)
+   end
+
+   local massKillIgnoreButton = Tab3:CreateButton({
+      Name = "Kill All Ignore Player (Set to host)",
+      Callback = function()
+         local plr = game.Players.LocalPlayer
+         if not plr then return end
+         local list = {}
+         for _,p in ipairs(game.Players:GetPlayers()) do
+            if p ~= plr then table.insert(list, p) end
+         end
+         if #list == 0 then
+            massKillIgnoreIndex = 0
+            massKillIgnoreName = ""
+            massKillIgnore = nil
+            notifyMassKill("Ignore cleared: no other players")
+            -- reset button label (best-effort)
+            pcall(function()
+               local newName = "Kill All Ignore Player (Set to host)"
+               if massKillIgnoreButton and massKillIgnoreButton.Set then massKillIgnoreButton:Set("Name", newName) end
+               if massKillIgnoreButton and massKillIgnoreButton.Update then massKillIgnoreButton:Update({Name = newName}) end
+               if massKillIgnoreButton and massKillIgnoreButton.SetText then massKillIgnoreButton:SetText(newName) end
+               if massKillIgnoreButton and massKillIgnoreButton.Button and massKillIgnoreButton.Button.Text then massKillIgnoreButton.Button.Text = newName end
+            end)
+            return
+         end
+         massKillIgnoreIndex = (massKillIgnoreIndex % #list) + 1
+         local sel = list[massKillIgnoreIndex]
+         massKillIgnoreName = sel and sel.Name or ""
+         massKillIgnore = sel
+         notifyMassKill("Now ignoring: " .. (massKillIgnoreName or ""))
+         -- update button label to show ignored player (best-effort)
+         pcall(function()
+            local newName = "Ignore: " .. (massKillIgnoreName ~= "" and massKillIgnoreName or "None")
+            if massKillIgnoreButton and massKillIgnoreButton.Set then massKillIgnoreButton:Set("Name", newName) end
+            if massKillIgnoreButton and massKillIgnoreButton.Update then massKillIgnoreButton:Update({Name = newName}) end
+            if massKillIgnoreButton and massKillIgnoreButton.SetText then massKillIgnoreButton:SetText(newName) end
+            if massKillIgnoreButton and massKillIgnoreButton.Button and massKillIgnoreButton.Button.Text then massKillIgnoreButton.Button.Text = newName end
+         end)
+      end,
+   })
+
+
+      local Section = Tab3:CreateSection("PVP")
+
+
+   do
+   local guardClosestEnabled = false
+   local guardClosestConn = nil
+   local guardClosestSavedCFrame = nil
+   local guardTarget = nil
+   local guardTargetDiedConn = nil
+   local guardSpamTask = nil
+
+   local function findNearestAlivePlayer()
+      local lp = game.Players.LocalPlayer
+      if not lp or not lp.Character then return nil end
+      local myHrp = lp.Character:FindFirstChild("HumanoidRootPart")
+      if not myHrp then return nil end
+      local closest = nil
+      local best = math.huge
+      for _, p in ipairs(game.Players:GetPlayers()) do
+         if p ~= lp then
+            local c = p.Character
+            local hum = c and c:FindFirstChildOfClass("Humanoid")
+            local hrp = c and c:FindFirstChild("HumanoidRootPart")
+            if hum and hrp and hum.Health > 0 then
+               local d = (myHrp.Position - hrp.Position).Magnitude
+               if d < best then best = d; closest = p end
+            end
+         end
+      end
+      return closest
+   end
+
+   Tab3:CreateToggle({
+      Name = "Kill Closest (Equip Weapon And Spam)",
+      CurrentValue = false,
+      Flag = "ToggleGuardClosest",
+      Callback = function(enabled)
+         guardClosestEnabled = enabled
+         local lp = game.Players.LocalPlayer
+         if not lp then return end
+
+         if enabled then
+            -- enable sword cooldown removal while guarding/attacking
+            pcall(function() if swordCooldown and swordCooldown.start then swordCooldown.start() end end)
+            local char = lp.Character or lp.CharacterAdded:Wait()
+            local myHrp = char and char:FindFirstChild("HumanoidRootPart")
+            if myHrp then guardClosestSavedCFrame = myHrp.CFrame end
+
+            guardTarget = findNearestAlivePlayer()
+            if guardTarget and guardTarget.Character then
+               local hum = guardTarget.Character:FindFirstChildOfClass("Humanoid")
+               if hum then
+                  guardTargetDiedConn = hum.Died:Connect(function()
+                     guardClosestEnabled = false
+                     if guardClosestConn then guardClosestConn:Disconnect() guardClosestConn = nil end
+                     if guardTargetDiedConn then guardTargetDiedConn:Disconnect() guardTargetDiedConn = nil end
+                     pcall(function()
+                        local c = lp.Character
+                        local h = c and c:FindFirstChild("HumanoidRootPart")
+                        if h and guardClosestSavedCFrame then h.CFrame = guardClosestSavedCFrame end
+                     end)
+                     guardClosestSavedCFrame = nil
+                  end)
+               end
+            end
+
+            local RunService = game:GetService("RunService")
+            guardClosestConn = RunService.Heartbeat:Connect(function()
+               if not guardClosestEnabled then return end
+               if not lp.Character then return end
+               local myH = lp.Character:FindFirstChild("HumanoidRootPart")
+               if not myH then return end
+
+               if not guardTarget or not guardTarget.Character then
+                  guardTarget = findNearestAlivePlayer()
+               end
+
+               if guardTarget and guardTarget.Character then
+                  local targetH = guardTarget.Character:FindFirstChild("HumanoidRootPart")
+                  local targetHum = guardTarget.Character:FindFirstChildOfClass("Humanoid")
+                  if not (targetH and targetHum and targetHum.Health > 0) then
+                     guardTarget = findNearestAlivePlayer()
+                     if not guardTarget then
+                        guardClosestEnabled = false
+                        if guardClosestConn then guardClosestConn:Disconnect() guardClosestConn = nil end
+                        if guardTargetDiedConn then guardTargetDiedConn:Disconnect() guardTargetDiedConn = nil end
+                        pcall(function()
+                           if myH and guardClosestSavedCFrame then myH.CFrame = guardClosestSavedCFrame end
+                        end)
+                        guardClosestSavedCFrame = nil
+                        return
+                     else
+                        if guardTargetDiedConn then guardTargetDiedConn:Disconnect() guardTargetDiedConn = nil end
+                        local newHum = guardTarget.Character and guardTarget.Character:FindFirstChildOfClass("Humanoid")
+                        if newHum then
+                           guardTargetDiedConn = newHum.Died:Connect(function()
+                              guardClosestEnabled = false
+                              if guardClosestConn then guardClosestConn:Disconnect() guardClosestConn = nil end
+                              if guardTargetDiedConn then guardTargetDiedConn:Disconnect() guardTargetDiedConn = nil end
+                              pcall(function()
+                                 local c = lp.Character
+                                 local h = c and c:FindFirstChild("HumanoidRootPart")
+                                 if h and guardClosestSavedCFrame then h.CFrame = guardClosestSavedCFrame end
+                              end)
+                              guardClosestSavedCFrame = nil
+                           end)
+                        end
+                     end
+                  end
+
+                  if myH and targetH then
+                     pcall(function() myH.CFrame = targetH.CFrame * CFrame.new(0, 0, 1.5) end)
+                  end
+               end
+            end)
+
+            -- start aggressive local spam task to rapidly Activate tool / fire tool remotes
+            guardSpamStop = false
+            if guardSpamTask then guardSpamTask = nil end
+            guardSpamTask = task.spawn(function()
+               local plr = game.Players.LocalPlayer
+               while guardClosestEnabled and not guardSpamStop do
+                  pcall(function()
+                     local char = plr.Character
+                     local tool = char and char:FindFirstChildOfClass("Tool")
+
+                     -- try to simulate MouseButton1 via VirtualInputManager if available
+                     local vim = nil
+                     pcall(function() vim = game:GetService("VirtualInputManager") end)
+                     local clicked = false
+                     if vim and vim.SendMouseButtonEvent then
+                        local cam = workspace.CurrentCamera
+                        local vx = (cam and cam.ViewportSize and cam.ViewportSize.X * 0.5) or 400
+                        local vy = (cam and cam.ViewportSize and cam.ViewportSize.Y * 0.5) or 300
+                        pcall(function() vim:SendMouseButtonEvent(vx, vy, true, game) end)
+                        task.wait(0.01)
+                        pcall(function() vim:SendMouseButtonEvent(vx, vy, false, game) end)
+                        clicked = true
+                     elseif typeof(mouse1click) == "function" then
+                        pcall(mouse1click)
+                        clicked = true
+                     end
+
+                     -- fallback: call Activate / remotes if virtual click not available
+                     if not clicked then
+                        if tool then
+                           pcall(function() tool:Activate() end)
+                           for _, d in ipairs(tool:GetDescendants()) do
+                              if d:IsA("RemoteEvent") then
+                                 pcall(function() d:FireServer() end)
+                              elseif d:IsA("RemoteFunction") then
+                                 pcall(function() d:InvokeServer() end)
+                              end
+                           end
+                        else
+                           local backpack = plr:FindFirstChild("Backpack")
+                           if backpack then
+                              local btool = backpack:FindFirstChildWhichIsA("Tool")
+                              if btool then
+                                 local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+                                 if humanoid then pcall(function() humanoid:EquipTool(btool) end) end
+                              end
+                           end
+                        end
+                     end
+                  end)
+                  task.wait(0.03)
+               end
+            end)
+
+         else
+            if guardClosestConn then guardClosestConn:Disconnect() guardClosestConn = nil end
+            if guardTargetDiedConn then guardTargetDiedConn:Disconnect() guardTargetDiedConn = nil end
+            guardTarget = nil
+               -- stop spam and sword cooldown helper when disabled
+               guardSpamStop = true
+               guardSpamTask = nil
+               pcall(function() if swordCooldown and swordCooldown.stop then swordCooldown.stop() end end)
+            pcall(function()
+               local char = lp.Character
+               local h = char and char:FindFirstChild("HumanoidRootPart")
+               if h and guardClosestSavedCFrame then h.CFrame = guardClosestSavedCFrame end
+            end)
+            guardClosestSavedCFrame = nil
+         end
+      end,
+   })
+end
+
+
+   do
+      local aimEnabled = false
+      local inputBeganConn = nil
+      local inputEndedConn = nil
+      local renderConn = nil
+      local rightDown = false
+      local oldCameraType = nil
+      local oldCameraCFrame = nil
+
+      local RunService = game:GetService("RunService")
+      local UserInputService = game:GetService("UserInputService")
+
+      local function findNearestHeadToCenter(cam, plr)
+         if not cam then return nil end
+         local viewport = cam.ViewportSize
+         local cx, cy = viewport.X * 0.5, viewport.Y * 0.5
+         local bestHead = nil
+         local bestDist = math.huge
+         for _, p in ipairs(game.Players:GetPlayers()) do
+            if p ~= plr and p.Character and p.Character.Parent then
+               local head = p.Character:FindFirstChild("Head")
+               local hum = p.Character:FindFirstChildOfClass("Humanoid")
+               if head and hum and hum.Health > 0 then
+                  local ok, screenPos, onScreen = pcall(function()
+                     return cam:WorldToViewportPoint(head.Position)
+                  end)
+                  if ok and screenPos then
+                     local sx, sy = screenPos.X, screenPos.Y
+                     -- Only consider things that are in front of the camera (z > 0)
+                     if screenPos.Z > 0 then
+                        local dx = sx - cx
+                        local dy = sy - cy
+                        local d = math.sqrt(dx*dx + dy*dy)
+                        if d < bestDist then
+                           bestDist = d
+                           bestHead = head
+                        end
+                     end
+                  end
+               end
+            end
+         end
+         return bestHead
+      end
+
+      local function startAiming()
+         if renderConn then renderConn:Disconnect() renderConn = nil end
+         local cam = workspace.CurrentCamera
+         renderConn = RunService.RenderStepped:Connect(function()
+            if not rightDown then return end
+            if not cam then cam = workspace.CurrentCamera end
+            local targetHead = findNearestHeadToCenter(cam, game.Players.LocalPlayer)
+            if targetHead and targetHead.Parent then
+               local headPos = targetHead.Position
+               local camPos = cam.CFrame.Position
+               local desired = CFrame.new(camPos, headPos)
+               -- smooth towards desired orientation
+               cam.CFrame = cam.CFrame:Lerp(desired, 0.45)
+            end
+         end)
+      end
+
+      local function stopAimingRestore(cam)
+         if renderConn then pcall(function() renderConn:Disconnect() end) renderConn = nil end
+         if cam and oldCameraCFrame then
+            pcall(function()
+               cam.CFrame = oldCameraCFrame
+            end)
+            oldCameraCFrame = nil
+         end
+      end
+
+      Tab3:CreateToggle({
+         Name = "AimHelper (Hold Right Click)",
+         CurrentValue = false,
+         Flag = "ToggleAimHelper",
+         Callback = function(enabled)
+            local plr = game.Players.LocalPlayer
+            aimEnabled = enabled
+            local cam = workspace.CurrentCamera
+
+            if enabled then
+               -- listen for right mouse down/up
+               if inputBeganConn then pcall(function() inputBeganConn:Disconnect() end) inputBeganConn = nil end
+               if inputEndedConn then pcall(function() inputEndedConn:Disconnect() end) inputEndedConn = nil end
+               inputBeganConn = UserInputService.InputBegan:Connect(function(inp, gpe)
+                  if gpe then return end
+                  if inp.UserInputType == Enum.UserInputType.MouseButton2 then
+                     rightDown = true
+                     if cam then
+                        oldCameraCFrame = cam.CFrame
+                     end
+                     startAiming()
+                  end
+               end)
+               inputEndedConn = UserInputService.InputEnded:Connect(function(inp, gpe)
+                  if gpe then return end
+                  if inp.UserInputType == Enum.UserInputType.MouseButton2 then
+                     rightDown = false
+                     stopAimingRestore(workspace.CurrentCamera)
+                  end
+               end)
+            else
+               -- disable completely
+               rightDown = false
+               if inputBeganConn then pcall(function() inputBeganConn:Disconnect() end) inputBeganConn = nil end
+               if inputEndedConn then pcall(function() inputEndedConn:Disconnect() end) inputEndedConn = nil end
+               stopAimingRestore(workspace.CurrentCamera)
+            end
+         end,
+      })
+   end
+
+
+local Section = Tab3:CreateSection("Helpful")
+
+
+   Tab3:CreateToggle({
+      Name = "Safezone",
+      CurrentValue = false,
+      Flag = "ToggleFreezeOutside",
+      Callback = function(enabled)
+         freezeEnabled = enabled
+         local plr = game.Players.LocalPlayer
+         if not plr then return end
+         local char = plr.Character
+         if enabled then
+            if char then applyFreezeToCharacter(char) end
+         else
+            if char then removeFreezeFromCharacter(char) end
+         end
+      end,
+   })
+   -- Auto safezone toggle inside same scope so it can access savedCFrame/apply/remove
+   do
+      local autoSafeEnabled = false
+      local autoConn = nil
+      local autoCharConn = nil
+      local autoApplied = false
+
+      local function bindForAuto(char)
+         if autoConn then pcall(function() autoConn:Disconnect() end) autoConn = nil end
+         autoApplied = false
+         if not char then return end
+         local humanoid = char:FindFirstChildOfClass("Humanoid")
+         if not humanoid then return end
+
+         autoConn = humanoid.HealthChanged:Connect(function(hp)
+            if not autoSafeEnabled then return end
+            if hp and hp <= 35 then
+               if not autoApplied then
+                  pcall(function() applyFreezeToCharacter(char) end)
+                  autoApplied = true
+               end
+            else
+               if autoApplied and not freezeEnabled then
+                  pcall(function() removeFreezeFromCharacter(char) end)
+                  autoApplied = false
+               end
+            end
+         end)
+
+         -- initial check
+         pcall(function()
+            if humanoid.Health and humanoid.Health <= 35 and autoSafeEnabled then
+               applyFreezeToCharacter(char)
+               autoApplied = true
+            end
+         end)
+      end
+
+      Tab3:CreateToggle({
+         Name = "Auto Safezone (<=35 HP)",
+         CurrentValue = false,
+         Flag = "ToggleAutoSafezone35",
+         Callback = function(enabled)
+            autoSafeEnabled = enabled
+            local plr = game.Players.LocalPlayer
+            if not plr then return end
+
+            if enabled then
+               if plr.Character then bindForAuto(plr.Character) end
+               autoCharConn = plr.CharacterAdded:Connect(function(c) bindForAuto(c) end)
+            else
+               if autoConn then pcall(function() autoConn:Disconnect() end) autoConn = nil end
+               if autoCharConn then pcall(function() autoCharConn:Disconnect() end) autoCharConn = nil end
+               if autoApplied and not freezeEnabled then
+                  local char = plr.Character
+                  if char then pcall(function() removeFreezeFromCharacter(char) end) end
+               end
+               autoApplied = false
+            end
+         end,
+      })
+   end
+end
+
+local Tab4 = MainWindow:CreateTab("Misc", 4483362458) -- Title, Image
+
+
+local Section = Tab4:CreateSection("Helpful")
+
+
+   -- Anti Knockback: persistent handlers so disable reliably stops behavior
+   do
+      local antiEnabled = false
+      local hbConn = nil
+      local charConn = nil
+      local savedWalk, savedJump = nil, nil
+
+      local function safeUnfreeze(char)
+         if not char then return end
+         local hrp = char:FindFirstChild("HumanoidRootPart")
+         local humanoid = char:FindFirstChildOfClass("Humanoid")
+         pcall(function()
+            if humanoid then
+               humanoid.PlatformStand = false
+               if savedWalk then humanoid.WalkSpeed = savedWalk end
+               if savedJump then humanoid.JumpPower = savedJump end
+            end
+            if hrp then hrp.Anchored = false end
+         end)
+      end
+
+      local function handleCharacter(char)
+         if not char then return end
+         local hrp = char:FindFirstChild("HumanoidRootPart")
+         local humanoid = char:FindFirstChildOfClass("Humanoid")
+         if humanoid then
+            savedWalk = savedWalk or humanoid.WalkSpeed
+            savedJump = savedJump or humanoid.JumpPower
+         end
+
+         -- ensure any previous connection is cleaned
+         if hbConn then pcall(function() hbConn:Disconnect() end) hbConn = nil end
+         local RunService = game:GetService("RunService")
+         hbConn = RunService.Heartbeat:Connect(function()
+            if not antiEnabled then return end
+            if not char or not char.Parent then return end
+            local h = char:FindFirstChildOfClass("Humanoid")
+            local r = char:FindFirstChild("HumanoidRootPart")
+
+            -- detect ragdoll or large fling
+            local isRagdoll = false
+            if h then
+               local st = h:GetState()
+               if st == Enum.HumanoidStateType.Physics or h.PlatformStand then isRagdoll = true end
+            end
+
+            local isFling = false
+            if r then
+               local ok, vel = pcall(function() return r.AssemblyLinearVelocity end)
+               if ok and vel and vel.Magnitude > 80 then isFling = true end
+            end
+
+            if isRagdoll or isFling then
+               -- freeze for 1s
+               pcall(function()
+                  if h then
+                     h.PlatformStand = true
+                     if savedWalk then h.WalkSpeed = 0 end
+                     if savedJump then h.JumpPower = 0 end
+                  end
+                  if r then
+                     r.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                     r.AssemblyAngularVelocity = Vector3.new(0,0,0)
+                     r.Anchored = true
+                  end
+               end)
+               task.wait(1)
+               safeUnfreeze(char)
+            else
+               -- restore movement values if available
+               if h and savedWalk then
+                  pcall(function()
+                     h.WalkSpeed = savedWalk
+                     h.JumpPower = savedJump or h.JumpPower
+                     h.PlatformStand = false
+                  end)
+               end
+            end
+         end)
+      end
+
+      Tab4:CreateToggle({
+         Name = "Anti Knockback",
+         CurrentValue = false,
+         Flag = "ToggleAntiKnockback3",
+         Callback = function(enabled)
+            local plr = game.Players.LocalPlayer
+            if not plr then return end
+
+            antiEnabled = enabled
+
+            if enabled then
+               if plr.Character then handleCharacter(plr.Character) end
+               if charConn then charConn:Disconnect(); charConn = nil end
+               charConn = plr.CharacterAdded:Connect(function(c)
+                  task.wait(0.1)
+                  handleCharacter(c)
+               end)
+            else
+               -- disable: clear flag, disconnect and unfreeze
+               antiEnabled = false
+               if hbConn then pcall(function() hbConn:Disconnect() end) hbConn = nil end
+               if charConn then pcall(function() charConn:Disconnect() end) charConn = nil end
+               if plr.Character then
+                  pcall(function()
+                     safeUnfreeze(plr.Character)
+                     local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                     local humanoid = plr.Character:FindFirstChildOfClass("Humanoid")
+                     if hrp then
+                        hrp.Anchored = false
+                        hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                        hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+                     end
+                     if humanoid then
+                        humanoid.PlatformStand = false
+                        humanoid.WalkSpeed = savedWalk or 16
+                        humanoid.JumpPower = savedJump or 50
+                     end
+                  end)
+               end
+               savedWalk, savedJump = nil, nil
+            end
+         end,
+      })
+   end
+
+
+      do
+      local viewerEnabled = false
+      local highlights = {}
+      local charConns = {}
+      local playerAddedConn, playerRemovingConn = nil, nil
+      local Players = game:GetService("Players")
+
+      local function makeHighlightForCharacter(p, char)
+         if not p or not char then return end
+         pcall(function()
+            if highlights[p] then highlights[p]:Destroy() highlights[p] = nil end
+            local hl = Instance.new("Highlight")
+            hl.Name = "TDG_PlayerViewer_Highlight"
+            hl.FillTransparency = 1 -- only outline
+            hl.OutlineTransparency = 0
+            hl.FillColor = Color3.fromRGB(0, 255, 0)
+            hl.OutlineColor = Color3.fromRGB(0, 255, 0)
+            -- prefer AlwaysOnTop/DepthMode if available so highlight shows through walls
+            pcall(function()
+               if Enum.HighlightDepthMode and Enum.HighlightDepthMode.AlwaysOnTop then
+                  hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+               end
+            end)
+            hl.Adornee = char
+            hl.Parent = workspace
+            highlights[p] = hl
+         end)
+      end
+
+      local function attachPlayer(p)
+         if not p then return end
+         if p == Players.LocalPlayer then return end
+         if p.Character and p.Character.Parent then
+            makeHighlightForCharacter(p, p.Character)
+         end
+         if charConns[p] then charConns[p]:Disconnect() charConns[p] = nil end
+         charConns[p] = p.CharacterAdded:Connect(function(c)
+            task.wait(0.05)
+            makeHighlightForCharacter(p, c)
+         end)
+      end
+
+      local function detachPlayer(p)
+         if not p then return end
+         if charConns[p] then pcall(function() charConns[p]:Disconnect() end) charConns[p] = nil end
+         if highlights[p] then pcall(function() highlights[p]:Destroy() end) highlights[p] = nil end
+      end
+
+      Tab4:CreateToggle({
+         Name = "ESP",
+         CurrentValue = false,
+         Flag = "TogglePlayerViewer",
+         Callback = function(enabled)
+            viewerEnabled = enabled
+            if enabled then
+               for _, p in ipairs(Players:GetPlayers()) do
+                  pcall(function() attachPlayer(p) end)
+               end
+               playerAddedConn = Players.PlayerAdded:Connect(function(p)
+                  attachPlayer(p)
+               end)
+               playerRemovingConn = Players.PlayerRemoving:Connect(function(p)
+                  detachPlayer(p)
+               end)
+            else
+               if playerAddedConn then pcall(function() playerAddedConn:Disconnect() end) playerAddedConn = nil end
+               if playerRemovingConn then pcall(function() playerRemovingConn:Disconnect() end) playerRemovingConn = nil end
+               for p, conn in pairs(charConns) do if conn then pcall(function() conn:Disconnect() end) end end
+               for p, hl in pairs(highlights) do if hl then pcall(function() hl:Destroy() end) end end
+               highlights = {}
+               charConns = {}
+            end
+         end,
+      })
+   end
+
+
+local Section = Tab4:CreateSection("Fun")
+
+
+   -- Donate toggle: aggressively spam Beggar's Cardboard remotes until toggled off
+   local donateActive = false
+   local donateTask = nil
+   Tab4:CreateToggle({
+      Name = "Poduim Particle Spam (Equip Sign Then Unequip) (Only works in some games and lobby)",
+      CurrentValue = false,
+      Flag = "ToggleDonateSpinner",
+      Callback = function(enabled)
+         donateActive = enabled
+         if enabled then
+            if donateTask then return end
+            donateTask = task.spawn(function()
+               local plr = game.Players.LocalPlayer
+               if not plr then donateActive = false; donateTask = nil; return end
+               local char = plr.Character or plr.CharacterAdded:Wait()
+               local hrp = char and char:FindFirstChild("HumanoidRootPart")
+               if not hrp then donateActive = false; donateTask = nil; return end
+
+               -- helper: ensure the player has the sign/tool in their Backpack/Character
+               local function ensureTool()
+                  pcall(function()
+                     char = plr.Character or plr.CharacterAdded:Wait()
+                     hrp = char and char:FindFirstChild("HumanoidRootPart")
+                  end)
+                  local backpack = plr:FindFirstChild("Backpack")
+                  local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+
+                  -- check if already holding a Tool
+                  if char and char:FindFirstChildWhichIsA("Tool") then return true end
+                  if backpack and backpack:FindFirstChildWhichIsA("Tool") then
+                     local t = backpack:FindFirstChildWhichIsA("Tool")
+                     pcall(function() if humanoid then humanoid:EquipTool(t) end end)
+                     return true
+                  end
+
+                  -- try cloning the wa tool from workspace if present
+                  local src = workspace:FindFirstChild("SreekDynopioa") and workspace.SreekDynopioa:FindFirstChild("wa")
+                  if src and src:IsA("Tool") then
+                     local okc, cl = pcall(function() return src:Clone() end)
+                     if okc and cl and backpack then
+                        cl.Parent = backpack
+                        pcall(function() if humanoid then humanoid:EquipTool(cl) end end)
+                        return true
+                     end
+                  end
+
+                  -- try to find a tool inside the Beggar's Cardboard card object
+                  local okcard, card = pcall(function()
+                     return workspace:FindFirstChild("SreekDynopioa") and workspace.SreekDynopioa:FindFirstChild("Beggar's Cardboard")
+                  end)
+                  if okcard and card then
+                     local tool = card:FindFirstChildWhichIsA("Tool", true)
+                     if tool and backpack then
+                        local okc, cl = pcall(function() return tool:Clone() end)
+                        if okc and cl then cl.Parent = backpack; pcall(function() if humanoid then humanoid:EquipTool(cl) end end); return true end
+                     end
+                  end
+
+                  return false
+               end
+
+               local tickEnsure = 0
+               while donateActive do
+                  local ok, card = pcall(function()
+                     return workspace:FindFirstChild("SreekDynopioa") and workspace.SreekDynopioa:FindFirstChild("Beggar's Cardboard")
+                  end)
+                  local comm = (ok and card) and card:FindFirstChild("__comm__")
+
+                  -- periodically ensure tool is equipped (every ~0.6s)
+                  if tick() - tickEnsure > 0.6 then
+                     pcall(function() ensureTool() end)
+                     tickEnsure = tick()
+                  end
+
+                  -- collect candidate remotes
+                  local evs, fns = {}, {}
+                  if comm then
+                     if comm:FindFirstChild("RE") then for _,v in ipairs(comm.RE:GetChildren()) do if v:IsA("RemoteEvent") then table.insert(evs,v) end end end
+                     if comm:FindFirstChild("RF") then for _,v in ipairs(comm.RF:GetChildren()) do if v:IsA("RemoteFunction") then table.insert(fns,v) end end end
+                     for _, name in ipairs({"SpawnPodium","RequestPodium","Spawn","SpawnSign","SpinSign","PromptWinnerDonation","PromptDonation","SpawnDonationSign"}) do
+                        local cand = comm:FindFirstChild(name) or (comm.RE and comm.RE:FindFirstChild(name)) or (comm.RF and comm.RF:FindFirstChild(name))
+                        if cand and cand:IsA("RemoteEvent") then table.insert(evs, cand) end
+                        if cand and cand:IsA("RemoteFunction") then table.insert(fns, cand) end
+                     end
+                  end
+
+                  -- spam each remote aggressively for more spawned signs/particles
+                  for rep = 1, 24 do
+                     for _, ev in ipairs(evs) do
+                        pcall(function()
+                           ev:FireServer()
+                           ev:FireServer(plr)
+                           ev:FireServer(plr.UserId)
+                           ev:FireServer(hrp and hrp.CFrame or nil)
+                           ev:FireServer(hrp and hrp.Position or nil)
+                           ev:FireServer({pos = hrp and hrp.Position or nil, attach = false})
+                        end)
+                     end
+                     for _, fn in ipairs(fns) do
+                        pcall(function()
+                           fn:InvokeServer()
+                           fn:InvokeServer(plr)
+                           fn:InvokeServer(hrp and hrp.CFrame or nil)
+                           fn:InvokeServer({pos = hrp and hrp.Position or nil, attach = false})
+                        end)
+                     end
+                     -- try client-side event emit
+                     if ok and card and card:FindFirstChild("OnClientEvent") and typeof(firesignal) == "function" then
+                        pcall(function() firesignal(card.OnClientEvent, hrp and hrp.CFrame or nil) end)
+                     end
+                     task.wait(0.002) -- very tight burst between repeats
+                  end
+
+                  -- spawn local visual clones as an extra fallback to increase apparent particles
+                  pcall(function()
+                     local handle = workspace:FindFirstChild("SreekDynopioa") and workspace.SreekDynopioa:FindFirstChild("wa") and workspace.SreekDynopioa.wa:FindFirstChild("Handle")
+                     if not handle then
+                        local okc, ccard = pcall(function() return workspace:FindFirstChild("SreekDynopioa") and workspace.SreekDynopioa:FindFirstChild("Beggar's Cardboard") end)
+                        if okc and ccard then handle = ccard:FindFirstChild("Handle") or ccard:FindFirstChildWhichIsA("BasePart") end
+                     end
+                     if handle and handle:IsA("BasePart") then
+                        for i = 1, 12 do
+                           local okc, cl = pcall(function() return handle:Clone() end)
+                           if okc and cl then
+                              cl.Anchored = false
+                              cl.CanCollide = false
+                              cl.Parent = workspace
+                              cl.CFrame = hrp.CFrame * CFrame.new(math.random(-6,6), math.random(1,4), math.random(-6,6)) * CFrame.Angles(0, math.random(), 0)
+                              task.spawn(function()
+                                 local vel = Instance.new("BodyVelocity")
+                                 vel.MaxForce = Vector3.new(1e5,1e5,1e5)
+                                 vel.Velocity = Vector3.new(0, 6 + math.random()*6, 0)
+                                 vel.Parent = cl
+                                 task.wait(0.4 + math.random()*0.4)
+                                 pcall(function() vel:Destroy() end)
+                                 task.wait(3 + math.random()*2)
+                                 pcall(function() cl:Destroy() end)
+                              end)
+                           end
+                        end
+                     end
+                  end)
+
+                  task.wait(0.01) -- between batches (short)
+               end
+
+               donateTask = nil
+            end)
+         else
+            donateActive = false
+         end
+      end,
+   })
+
+-- Fake Lag: intermittently freeze/unfreeze local character to simulate lag
+do
+   local fakeLagEnabled = false
+   local freezeDuration = 0.15 -- seconds frozen
+   local moveDuration = 0.08 -- seconds unfrozen (adjust to taste)
+
+   Tab4:CreateToggle({
+      Name = "Fake Lag",
+      CurrentValue = false,
+      Flag = "ToggleFakeLag",
+      Callback = function(enabled)
+         fakeLagEnabled = enabled
+         local plr = game.Players.LocalPlayer
+         if not plr then return end
+
+         if enabled then
+            task.spawn(function()
+               while fakeLagEnabled do
+                  local char = plr.Character
+                  if char and char.Parent then
+                     local hrp = char:FindFirstChild("HumanoidRootPart")
+                     local humanoid = char:FindFirstChildOfClass("Humanoid")
+                     if hrp then
+                        pcall(function()
+                           hrp.Anchored = true
+                           if humanoid then humanoid.PlatformStand = true end
+                        end)
+                        task.wait(freezeDuration)
+                        pcall(function()
+                           if humanoid then humanoid.PlatformStand = false end
+                           hrp.Anchored = false
+                        end)
+                        task.wait(moveDuration)
+                     else
+                        task.wait(0.2)
+                     end
+                  else
+                     task.wait(0.2)
+                  end
+               end
+            end)
+         else
+            -- ensure we are un-frozen when toggled off
+            pcall(function()
+               local char = plr.Character
+               if char and char.Parent then
+                  local hrp = char:FindFirstChild("HumanoidRootPart")
+                  local humanoid = char:FindFirstChildOfClass("Humanoid")
+                  if hrp then hrp.Anchored = false end
+                  if humanoid then humanoid.PlatformStand = false end
+               end
+            end)
+         end
+      end,
+   })
+end
+
+
+local Section = Tab4:CreateSection("Extra Scripts")
+
+
+   Tab4:CreateButton({
+      Name = "Chat Bypasser",
+      Callback = function()
+         pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/Tykusm/Bypasser/refs/heads/main/Main"))()
+         end)
+      end,
+   })
