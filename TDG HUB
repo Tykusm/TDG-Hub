@@ -1,3 +1,6 @@
+-- Programmed in 3 days by mddm321 on discord
+-- NOT INTENDED FOR MALICIOUS PURPOSE, THIS WAS MADE FOR A DEV TO FIND BUGS AND MAKE AN ANTICHEAT
+
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 
